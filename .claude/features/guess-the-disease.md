@@ -1,6 +1,6 @@
 # Фича: Угадай болезнь (новая игра)
 
-**Статус:** фаза 4 — реализация, этап 3/3 готов (ждёт push), дальше сверка с брифом и фаза 5
+**Статус:** фаза 5 — ревью
 <!-- значения: фаза 1 — брейншторм | фаза 2 — прототип | фаза 3 — план | фаза 4 — реализация, этап N/M | фаза 5 — ревью | готово -->
 **Создано:** 2026-10-20 · **Slug:** guess-the-disease · **Проект:** новый, кода нет (/home/user пуст, git нет). Цель — веб-игра для iPhone 17 (Safari), без установки.
 
@@ -121,11 +121,34 @@
 - Чужие баги, замеченные по пути (не чинил): —
 - Как запустить / проверить: npm test (23 теста) · npm run e2e (Playwright, скриншоты в tests/e2e/out/) · npm run serve → http://localhost:8080
 
+## Сверка с брифом (конец фазы 4, 2026-10-20)
+| Правило / граничный случай | Где реализовано | Как проверено |
+|---|---|---|
+| Настройка: 1–4 команды, имена, время, круги, штраф, звук | render.js scrSetup, main.js ACTIONS, config.js LIMITS | e2e teamsGame (добавить/убрать команды, круги) |
+| Передача хода, отсчёт 3-2-1 | game.startTurn/beginTurn, scrHandoff/scrCount | unit «countdown…», e2e |
+| Угадали +1, пропуск −1 / 0 | game.answer/points | unit, e2e runsum |
+| Время вышло → последнее слово, «Не угадали» = 0 | game.tick/goLast/answer | unit, e2e |
+| Итоги хода с правкой | game.toggleResult, scrSummary | unit, e2e (+1 → +3) |
+| N кругов → финал, победа/ничья, места | game.nextTurn/toFinal/standings, scrFinal | unit (ничья), e2e |
+| Рекорд: жалобы → переворот → ответ, кнопки неактивны, таймер стоит | game.canFlip/canAnswer/held, soloCardHTML, CSS .flip | unit, e2e soloGame + keyboard |
+| Без повторов между партиями, перемешивание | game.buildDeck/draw/reshuffle, storage played | unit |
+| Свернули Safari → пауза | input.js visibilitychange → game.pause | e2e pauseAndRestore |
+| Перезагрузка → партия на паузе | game.restore, storage.js | unit, e2e |
+| Спам кнопок | game.switching (CARD_SWITCH_MS) | unit |
+| Счёт в минус | game.points | unit |
+| Беззвучный режим: таймер пульсирует | CSS .warn, sound.js | e2e (.warn), звук — вручную на iPhone |
+| Wake Lock | main.js wake | только вручную на iPhone (headless не проверить) |
+| Поворот → подсказка, таймер стоит | input.js matchMedia, game.setRotated | unit, e2e rotation |
+| Компьютер: ↑/пробел, ↓, Esc | input.js keydown | e2e keyboard |
+| Колода 60, подсказки без корня названия | cards.js | tests/cards.test.js |
+| Офлайн, «На экран Домой» | sw.js, manifest, icons | tests/sw.test.js, e2e offline |
+| Шрифты названий ≥ 32 px | CSS .name fit + мягкие переносы | e2e namesFit (≥ 28 px; отклонение записано) |
+
 ## Ревью
 - —
 
 ## Как продолжить (читать первым после /compact)
-1. Прочитай этот файл и план (.claude/features/guess-the-disease-plan.md) целиком.
-2. `git status`, `git diff --stat e5efaff` — сверь с разделом «Реализация».
-3. Текущая фаза: 4, все шаги плана сделаны (этап 3 — ждёт push). Следующий шаг: сверка с брифом (таблица «правило → где → как проверил») и сразу фаза 5 (ревью свежим агентом по references/review.md).
-4. Пользователь: сделать репозиторий публичным (Settings → General → Danger Zone → Change visibility → Public), затем Settings → Pages → Deploy from a branch → main / (root).
+1. Прочитай этот файл и план целиком.
+2. Текущая фаза: 5 — ревью. Все этапы запушены (9edda35) + проверка клавиатуры в e2e (не закоммичено, если git status показывает).
+3. Следующий шаг: references/review.md → свежий агент ревью по диффу e5efaff..HEAD → проверить находки → исправить → отчёт → статус «готово».
+4. Пользователь: сделать репозиторий публичным и включить Pages.

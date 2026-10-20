@@ -254,6 +254,37 @@ async function deckPage(browser){
   await ctx.close();
 }
 
+// Playing on a computer: ↑/space — guessed, ↓ — skip, Esc — pause; in solo mode the first key flips the card.
+async function keyboard(browser){
+  const {ctx, page} = await open(browser, DESKTOP, {mobile: false});
+  await page.click('[data-a="toSetup"]');
+  await page.click('[data-a="start"]');
+  await page.click('[data-a="startTurn"]');
+  await countdown(page);
+  await page.keyboard.press('ArrowUp'); await page.clock.runFor(300);
+  await page.keyboard.press(' '); await page.clock.runFor(300);
+  await page.keyboard.press('ArrowDown'); await page.clock.runFor(300);
+  check(await text(page, '.runsum') === '+1', 'keyboard: ↑, space, ↓ give +1');
+  await page.keyboard.press('Escape');
+  check(await page.locator('.ov .sheet h3').innerText() === 'Пауза', 'keyboard: Esc pauses');
+  await page.keyboard.press('Escape');
+  check(await page.locator('.ov').count() === 0, 'keyboard: Esc resumes');
+  await page.click('[data-a="pause"]');
+  await page.click('.ov [data-a="askExit"]');
+  await page.click('[data-a="exit"]');
+  await page.click('[data-a="toSetup"]');
+  await page.click('[data-a="rmTeam"][data-i="1"]');
+  await page.click('[data-a="start"]');
+  await page.click('[data-a="startTurn"]');
+  await countdown(page);
+  await page.keyboard.press('ArrowUp'); await page.clock.runFor(600);
+  check(await page.locator('.card.is-flipped').count() === 1 && await text(page, '.runsum') === '0', 'keyboard: in solo the first key flips, not answers');
+  await page.keyboard.press('ArrowUp'); await page.clock.runFor(300);
+  check(await text(page, '.runsum') === '+1', 'keyboard: in solo the second key answers');
+  check(!page.errors.length, `keyboard: console errors: ${page.errors.join(' | ')}`);
+  await ctx.close();
+}
+
 async function rotation(browser){
   const {ctx, page} = await open(browser, {width: 750, height: 402});
   check(await page.locator('.ov.rot').count() === 1, 'landscape phone shows the rotate hint');
@@ -270,6 +301,7 @@ try {
   for (const vp of PHONES){ await teamsGame(browser, vp, true); await soloGame(browser, vp); }
   await teamsGame(browser, DESKTOP, false);
   await pauseAndRestore(browser);
+  await keyboard(browser);
   await rotation(browser);
   await offline(browser);
   await deckPage(browser);
@@ -283,4 +315,4 @@ if (failures.length){
   console.error('E2E FAILED\n- ' + failures.join('\n- '));
   process.exit(1);
 }
-console.log(`E2E passed: ${PHONES.length} phone sizes + desktop, all card names fit, solo, pause/restore, rotation, offline, deck page. Screenshots: tests/e2e/out/`);
+console.log(`E2E passed: ${PHONES.length} phone sizes + desktop, all card names fit, solo, pause/restore, keyboard, rotation, offline, deck page. Screenshots: tests/e2e/out/`);
