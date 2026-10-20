@@ -5,6 +5,7 @@ import {createServer} from 'node:http';
 import {readFile, mkdir} from 'node:fs/promises';
 import {extname, join, normalize} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {PARAMS, TIMING} from '../../js/config.js';
 
 const require = createRequire(import.meta.url);
 const {chromium} = require('playwright');
@@ -33,6 +34,13 @@ const server = createServer(async (req, res) => {
 await new Promise(r => server.listen(0, r));
 const BASE = `http://localhost:${server.address().port}/`;
 await mkdir(OUT, {recursive: true});
+
+// Game time is driven by page.clock; these follow js/config.js so the test survives retuning.
+const ROUND_MS = PARAMS.ROUND_SECONDS * 1000;
+const WARN_MS = PARAMS.WARNING_SECONDS * 1000;
+const SWITCH_MS = PARAMS.CARD_SWITCH_MS + 50;
+const FLIP_MS = PARAMS.FLIP_MS + 150;
+const COUNTDOWN_MS = PARAMS.COUNTDOWN_SECONDS * 1000 + 200;
 
 const failures = [];
 const check = (ok, msg) => { if (!ok) failures.push(msg); };
@@ -66,6 +74,25 @@ async function fits(page, label){
   check(!r.below.length, `${label}: below the screen: ${r.below.join(', ')}`);
 }
 // Every card name fits the real card on this screen: no word is cut in the middle (soft hyphens are fine).
+// Solo mode: the complaints side of every card fits the card on this screen.
+async function frontsFit(page, label){
+  const bad = await page.evaluate(async () => {
+    const {CARDS} = await import('./js/cards.js');
+    const {soloCardHTML} = await import('./js/render.js');
+    await document.fonts.ready;
+    const wrap = document.querySelector('.cardwrap');
+    const keep = wrap.innerHTML, out = [];
+    for (const c of CARDS){
+      wrap.innerHTML = soloCardHTML(c.id);
+      const front = wrap.querySelector('.front');
+      if (front.scrollHeight > front.clientHeight + 1) out.push(`${c.name} (+${front.scrollHeight - front.clientHeight}px)`);
+    }
+    wrap.innerHTML = keep;
+    return out;
+  });
+  check(!bad.length, `${label}: solo fronts overflow: ${bad.join(', ')}`);
+}
+
 async function namesFit(page, label){
   const bad = await page.evaluate(async () => {
     const {CARDS} = await import('./js/cards.js');
@@ -79,7 +106,7 @@ async function namesFit(page, label){
       const probe = document.createElement('span');
       probe.style.cssText = `font:${getComputedStyle(name).font}; white-space:nowrap; position:absolute; visibility:hidden`;
       document.body.append(probe);
-      for (const part of c.name.split(/[\s­]+/)){
+      for (const part of c.name.split(/[\s\u00AD]+/)){
         probe.textContent = part + '-';
         if (probe.getBoundingClientRect().width > width + 1) out.push(`${part} (${Math.round(probe.getBoundingClientRect().width)} > ${width})`);
       }
@@ -91,58 +118,63 @@ async function namesFit(page, label){
   });
   check(!bad.length, `${label}: names do not fit: ${bad.join(', ')}`);
 }
+// Real-time pause before a tap, like a person: a tap right after a screen change at the same spot counts as a double tap.
+async function tap(page, selector){
+  await page.waitForTimeout(TIMING.SCREEN_GUARD_MS + 60);
+  await page.click(selector);
+}
 const shot = (page, name) => page.screenshot({path: join(OUT, name + '.png')});
 const text = (page, sel) => page.locator(sel).first().innerText();
-async function countdown(page){ await page.clock.runFor(3200); await page.waitForSelector('.scr.turn'); }
+async function countdown(page){ await page.clock.runFor(COUNTDOWN_MS); await page.waitForSelector('.scr.turn'); }
 
 async function teamsGame(browser, vp, mobile){
   const {ctx, page} = await open(browser, vp, {mobile});
   const L = vp.name;
   await fits(page, `${L} home`); await shot(page, `${L}-1-home`);
-  await page.click('[data-a="toSetup"]');
-  await page.click('[data-a="addTeam"]');
-  await page.click('[data-a="addTeam"]');
+  await tap(page, '[data-a="toSetup"]');
+  await tap(page, '[data-a="addTeam"]');
+  await tap(page, '[data-a="addTeam"]');
   await fits(page, `${L} setup 4 teams`); await shot(page, `${L}-2-setup`);
-  await page.click('[data-a="rmTeam"][data-i="3"]');
-  await page.click('[data-a="rmTeam"][data-i="2"]');
-  for (let i = 0; i < 2; i++) await page.click('[data-a="step"][data-k="ROUNDS"][data-d="-1"]');
-  await page.click('[data-a="start"]');
+  await tap(page, '[data-a="rmTeam"][data-i="3"]');
+  await tap(page, '[data-a="rmTeam"][data-i="2"]');
+  for (let i = 0; i < 2; i++) await tap(page, '[data-a="step"][data-k="ROUNDS"][data-d="-1"]');
+  await tap(page, '[data-a="start"]');
   await fits(page, `${L} handoff`); await shot(page, `${L}-3-handoff`);
 
-  await page.click('[data-a="startTurn"]');
+  await tap(page, '[data-a="startTurn"]');
   await countdown(page);
   await fits(page, `${L} turn`); await shot(page, `${L}-4-turn`);
   await namesFit(page, L);
-  await page.click('[data-a="ok"]'); await page.clock.runFor(300);
-  await page.click('[data-a="skip"]'); await page.clock.runFor(300);
+  await tap(page, '[data-a="ok"]'); await page.clock.runFor(SWITCH_MS);
+  await tap(page, '[data-a="skip"]'); await page.clock.runFor(SWITCH_MS);
   // swipe up
   const box = await page.locator('.card').boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - 120, {steps: 6});
   await page.mouse.up();
-  await page.clock.runFor(300);
+  await page.clock.runFor(SWITCH_MS);
   check(await text(page, '.runsum') === '+1', `${L}: turn score after ok, skip, swipe up should be +1`);
-  await page.clock.runFor(55_500);
+  await page.clock.runFor(ROUND_MS - WARN_MS + 500 - 3 * SWITCH_MS);
   check(await page.locator('.scr.turn.warn').count() === 1, `${L}: warning in the last seconds`);
-  await page.clock.runFor(5000);
+  await page.clock.runFor(WARN_MS);
   await page.waitForSelector('.scr.last');
   await fits(page, `${L} last word`); await shot(page, `${L}-5-last`);
   check((await text(page, '.ans.skip')).includes('Не угадали'), `${L}: last word skip label`);
-  await page.click('[data-a="skip"]'); await page.clock.runFor(300);
+  await tap(page, '[data-a="skip"]'); await page.clock.runFor(SWITCH_MS);
   await page.waitForSelector('.scr.summary');
   await fits(page, `${L} summary`); await shot(page, `${L}-6-summary`);
   check(await text(page, '.sumhead .big') === '+1', `${L}: summary total`);
-  await page.click('[data-a="toggle"][data-i="1"]');
+  await tap(page, '[data-a="toggle"][data-i="1"]');
   check(await text(page, '.sumhead .big') === '+3', `${L}: fixing a skip gives +3`);
-  await page.click('[data-a="next"]');
+  await tap(page, '[data-a="next"]');
   check(await page.locator('.board li.cur .tn').innerText() === 'Хирурги', `${L}: second team's turn`);
 
-  await page.click('[data-a="startTurn"]');
+  await tap(page, '[data-a="startTurn"]');
   await countdown(page);
-  await page.clock.runFor(61_000);
-  await page.click('[data-a="ok"]'); await page.clock.runFor(300);
-  await page.click('[data-a="next"]');
+  await page.clock.runFor(ROUND_MS + 1000);
+  await tap(page, '[data-a="ok"]'); await page.clock.runFor(SWITCH_MS);
+  await tap(page, '[data-a="next"]');
   await page.waitForSelector('.scr.final');
   await page.clock.runFor(800);
   await fits(page, `${L} final`); await shot(page, `${L}-7-final`);
@@ -154,29 +186,30 @@ async function teamsGame(browser, vp, mobile){
 async function soloGame(browser, vp){
   const {ctx, page} = await open(browser, vp);
   const L = vp.name + '-solo';
-  await page.click('[data-a="toSetup"]');
-  await page.click('[data-a="rmTeam"][data-i="1"]');
-  await page.click('[data-a="step"][data-k="ROUNDS"][data-d="-1"]');
-  await page.click('[data-a="step"][data-k="ROUNDS"][data-d="-1"]');
-  await page.click('[data-a="start"]');
-  await page.click('[data-a="startTurn"]');
+  await tap(page, '[data-a="toSetup"]');
+  await tap(page, '[data-a="rmTeam"][data-i="1"]');
+  await tap(page, '[data-a="step"][data-k="ROUNDS"][data-d="-1"]');
+  await tap(page, '[data-a="step"][data-k="ROUNDS"][data-d="-1"]');
+  await tap(page, '[data-a="start"]');
+  await tap(page, '[data-a="startTurn"]');
   await countdown(page);
   await fits(page, `${L} front`); await shot(page, `${L}-1-front`);
+  await frontsFit(page, L);
   check(await page.locator('.ans.ok').isDisabled(), `${L}: answers disabled before the flip`);
-  await page.click('.card.flip');
-  await page.clock.runFor(600);
+  await tap(page, '.card.flip');
+  await page.clock.runFor(FLIP_MS);
   await fits(page, `${L} back`); await shot(page, `${L}-2-back`);
   const t1 = await text(page, '.tsec');
   await page.clock.runFor(5000);
   check(await text(page, '.tsec') === t1, `${L}: timer stands while the answer is shown`);
   check(await page.locator('.scr.turn.held').count() === 1, `${L}: held state shown`);
-  await page.click('[data-a="ok"]'); await page.clock.runFor(300);
+  await tap(page, '[data-a="ok"]'); await page.clock.runFor(SWITCH_MS);
   check(await page.locator('.card.flip:not(.is-flipped)').count() === 1, `${L}: next card comes face down`);
-  await page.clock.runFor(61_000);
+  await page.clock.runFor(ROUND_MS + 1000);
   await page.waitForSelector('.scr.last');
-  await page.click('.card.flip'); await page.clock.runFor(600);
-  await page.click('[data-a="skip"]'); await page.clock.runFor(300);
-  await page.click('[data-a="next"]');
+  await tap(page, '.card.flip'); await page.clock.runFor(FLIP_MS);
+  await tap(page, '[data-a="skip"]'); await page.clock.runFor(SWITCH_MS);
+  await tap(page, '[data-a="next"]');
   await page.waitForSelector('.scr.final');
   await page.clock.runFor(800);
   await fits(page, `${L} final`); await shot(page, `${L}-3-final`);
@@ -188,9 +221,9 @@ async function soloGame(browser, vp){
 
 async function pauseAndRestore(browser){
   const {ctx, page} = await open(browser, PHONES[1]);
-  await page.click('[data-a="toSetup"]');
-  await page.click('[data-a="start"]');
-  await page.click('[data-a="startTurn"]');
+  await tap(page, '[data-a="toSetup"]');
+  await tap(page, '[data-a="start"]');
+  await tap(page, '[data-a="startTurn"]');
   await countdown(page);
   await page.clock.runFor(10_000);
   await page.evaluate(() => {
@@ -206,12 +239,17 @@ async function pauseAndRestore(browser){
   check(await page.locator('.ov .sheet h3').innerText() === 'Пауза', 'reload restores the turn paused');
   check(await text(page, '.tsec') === t, 'reload keeps the time left');
   check(!(await page.locator('#toast').isHidden()), 'restored game shows a toast');
-  await page.click('[data-a="resume"]');
+  await tap(page, '[data-a="resume"]');
   await page.clock.runFor(2000);
   check(Number(await text(page, '.tsec')) < Number(t), 'timer runs after resume');
-  await page.click('[data-a="pause"]');
-  await page.click('.ov [data-a="askExit"]');
-  await page.click('[data-a="exit"]');
+  await tap(page, '[data-a="pause"]');
+  await page.waitForTimeout(TIMING.SCREEN_GUARD_MS + 60);
+  const exitBox = await page.locator('.ov [data-a="askExit"]').boundingBox();
+  await page.mouse.click(exitBox.x + exitBox.width / 2, exitBox.y + exitBox.height / 2);
+  await page.mouse.click(exitBox.x + exitBox.width / 2, exitBox.y + exitBox.height / 2);
+  const confirmShown = await page.locator('.ov .sheet h3', {hasText: 'Закончить игру?'}).count() === 1;
+  check(confirmShown, 'a double tap on «Закончить игру» stops at the confirmation');
+  if (confirmShown) await tap(page, '[data-a="exit"]');
   await page.waitForSelector('.scr.home');
   check(!page.errors.length, `pause: console errors: ${page.errors.join(' | ')}`);
   await ctx.close();
@@ -231,9 +269,9 @@ async function offline(browser){
   await page.waitForSelector('.scr.home');
   await page.evaluate(() => document.fonts.ready);
   check(await page.evaluate(() => document.fonts.check('800 32px Unbounded', 'Угадай') && document.fonts.check('700 18px Nunito', 'Объясняй')), 'offline: fonts load from the cache');
-  await page.click('[data-a="toSetup"]');
-  await page.click('[data-a="start"]');
-  await page.click('[data-a="startTurn"]');
+  await tap(page, '[data-a="toSetup"]');
+  await tap(page, '[data-a="start"]');
+  await tap(page, '[data-a="startTurn"]');
   await page.waitForSelector('.scr.turn', {timeout: 6000});
   check(await page.locator('.card .art svg').count() === 1, 'offline: a card is drawn');
   check(!errors.length, `offline: console errors: ${errors.join(' | ')}`);
@@ -257,29 +295,29 @@ async function deckPage(browser){
 // Playing on a computer: ↑/space — guessed, ↓ — skip, Esc — pause; in solo mode the first key flips the card.
 async function keyboard(browser){
   const {ctx, page} = await open(browser, DESKTOP, {mobile: false});
-  await page.click('[data-a="toSetup"]');
-  await page.click('[data-a="start"]');
-  await page.click('[data-a="startTurn"]');
+  await tap(page, '[data-a="toSetup"]');
+  await tap(page, '[data-a="start"]');
+  await tap(page, '[data-a="startTurn"]');
   await countdown(page);
-  await page.keyboard.press('ArrowUp'); await page.clock.runFor(300);
-  await page.keyboard.press(' '); await page.clock.runFor(300);
-  await page.keyboard.press('ArrowDown'); await page.clock.runFor(300);
+  await page.keyboard.press('ArrowUp'); await page.clock.runFor(SWITCH_MS);
+  await page.keyboard.press(' '); await page.clock.runFor(SWITCH_MS);
+  await page.keyboard.press('ArrowDown'); await page.clock.runFor(SWITCH_MS);
   check(await text(page, '.runsum') === '+1', 'keyboard: ↑, space, ↓ give +1');
   await page.keyboard.press('Escape');
   check(await page.locator('.ov .sheet h3').innerText() === 'Пауза', 'keyboard: Esc pauses');
   await page.keyboard.press('Escape');
   check(await page.locator('.ov').count() === 0, 'keyboard: Esc resumes');
-  await page.click('[data-a="pause"]');
-  await page.click('.ov [data-a="askExit"]');
-  await page.click('[data-a="exit"]');
-  await page.click('[data-a="toSetup"]');
-  await page.click('[data-a="rmTeam"][data-i="1"]');
-  await page.click('[data-a="start"]');
-  await page.click('[data-a="startTurn"]');
+  await tap(page, '[data-a="pause"]');
+  await tap(page, '.ov [data-a="askExit"]');
+  await tap(page, '[data-a="exit"]');
+  await tap(page, '[data-a="toSetup"]');
+  await tap(page, '[data-a="rmTeam"][data-i="1"]');
+  await tap(page, '[data-a="start"]');
+  await tap(page, '[data-a="startTurn"]');
   await countdown(page);
-  await page.keyboard.press('ArrowUp'); await page.clock.runFor(600);
+  await page.keyboard.press('ArrowUp'); await page.clock.runFor(FLIP_MS);
   check(await page.locator('.card.is-flipped').count() === 1 && await text(page, '.runsum') === '0', 'keyboard: in solo the first key flips, not answers');
-  await page.keyboard.press('ArrowUp'); await page.clock.runFor(300);
+  await page.keyboard.press('ArrowUp'); await page.clock.runFor(SWITCH_MS);
   check(await text(page, '.runsum') === '+1', 'keyboard: in solo the second key answers');
   check(!page.errors.length, `keyboard: console errors: ${page.errors.join(' | ')}`);
   await ctx.close();
@@ -315,4 +353,4 @@ if (failures.length){
   console.error('E2E FAILED\n- ' + failures.join('\n- '));
   process.exit(1);
 }
-console.log(`E2E passed: ${PHONES.length} phone sizes + desktop, all card names fit, solo, pause/restore, keyboard, rotation, offline, deck page. Screenshots: tests/e2e/out/`);
+console.log(`E2E passed: ${PHONES.length} phone sizes + desktop, all card names and solo fronts fit, solo, pause/restore, double tap, keyboard, rotation, offline, deck page. Screenshots: tests/e2e/out/`);

@@ -4,9 +4,16 @@ import {TIMING} from './config.js';
 const LANDSCAPE_PHONE = '(orientation: landscape) and (max-height: 500px) and (pointer: coarse)';
 
 export function attachInput({root, game, act, onTeamName}){
+  // Buttons of neighbouring screens sit in the same places: the second tap of a double tap
+  // would press "Закончить" in the confirmation or "На главную" on the final screen.
+  const screenKey = () => `${game.state.screen}|${game.state.overlay}`;
+  let lastTap = null;
   root.addEventListener('click', e => {
     const el = e.target.closest('[data-a]');
     if (!el || !root.contains(el) || el.disabled) return;
+    if (lastTap && e.timeStamp - lastTap.t < TIMING.SCREEN_GUARD_MS && screenKey() !== lastTap.key &&
+        Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < TIMING.TAP_SLOP_PX) return;
+    lastTap = {t: e.timeStamp, x: e.clientX, y: e.clientY, key: screenKey()};
     act(el.dataset.a, el.dataset);
   });
   root.addEventListener('input', e => {
@@ -38,14 +45,15 @@ export function attachInput({root, game, act, onTeamName}){
     tint.className = 'tint ' + (dy < 0 ? 'up' : 'down');
     tint.textContent = dy < 0 ? 'Угадали' : (game.state.screen === 'last' || game.solo ? 'Не угадали' : 'Пропуск');
   });
+  // A cancelled gesture (the system took it over) never counts as an answer.
   const endDrag = e => {
     if (!drag || e.pointerId !== drag.id) return;
     const {dy, card} = drag;
     drag = null;
     const threshold = game.params.SWIPE_THRESHOLD_PX;
     card.style.transition = '';
-    if (dy <= -threshold) act('ok');
-    else if (dy >= threshold) act('skip');
+    if (e.type === 'pointerup' && dy <= -threshold) act('ok');
+    else if (e.type === 'pointerup' && dy >= threshold) act('skip');
     else {
       card.style.transform = '';
       const tint = card.querySelector('.tint');
@@ -58,7 +66,7 @@ export function attachInput({root, game, act, onTeamName}){
   // Keyboard, for playing on a computer.
   document.addEventListener('keydown', e => {
     const tag = e.target.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || e.repeat) return;
     if (e.key === 'Escape'){ act(game.state.overlay === 'pause' ? 'resume' : 'pause'); return; }
     if (!game.playing || game.state.overlay) return;
     if (!['ArrowUp', 'ArrowDown', ' ', 'Enter'].includes(e.key)) return;

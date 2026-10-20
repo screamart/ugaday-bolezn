@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {Game, shuffle} from '../js/game.js';
+import {Game, shuffle, freeTeamName} from '../js/game.js';
 import {PARAMS} from '../js/config.js';
 
 const IDS = Array.from({length: 12}, (_, i) => 'c' + i);
@@ -44,9 +44,9 @@ test('countdown leads into the turn and draws a card', () => {
   g.startGame(['A', 'B']);
   g.startTurn();
   assert.equal(g.state.screen, 'countdown');
-  g.tick(1000); g.tick(1000);
+  g.tick(PARAMS.COUNTDOWN_SECONDS * 1000 - 1);
   assert.equal(g.state.screen, 'countdown');
-  g.tick(1000);
+  g.tick(1);
   assert.equal(g.state.screen, 'turn');
   assert.ok(g.state.current);
   assert.ok(g.has('wake', true));
@@ -138,7 +138,7 @@ test('rounds pass from team to team and end in the final', () => {
   const order = [];
   while (g.state.screen !== 'final'){
     order.push(`${g.state.round}:${g.state.turnTeam}`);
-    g.startTurn(); g.tick(3000);
+    g.startTurn(); g.tick(PARAMS.COUNTDOWN_SECONDS * 1000);
     g.answer('ok'); settle(g);
     g.tick(PARAMS.ROUND_SECONDS * 1000);
     g.answer('ok'); settle(g);
@@ -170,7 +170,7 @@ test('fixing an answer on the summary changes the score', () => {
 test('solo record is kept and flagged when beaten', () => {
   const g = make({params: {ROUNDS: 1}, record: 1});
   g.startGame(['Мы']);
-  g.startTurn(); g.tick(3000);
+  g.startTurn(); g.tick(PARAMS.COUNTDOWN_SECONDS * 1000);
   for (let i = 0; i < 2; i++){ g.flip(); g.answer('ok'); settle(g); }
   g.tick(PARAMS.ROUND_SECONDS * 1000);
   g.flip(); g.answer('skip'); settle(g);
@@ -271,6 +271,60 @@ test('empty team names fall back to defaults; at most 4 teams', () => {
   const g = make();
   g.startGame(['', '  ', 'Мы', 'Они', 'Лишние']);
   assert.deepEqual(g.state.teams.map(t => t.name), ['Терапевты', 'Хирурги', 'Мы', 'Они']);
+});
+
+test('restore drops what an older release or a damaged store left behind', () => {
+  const g = make();
+  playTurn(g);
+  const saved = JSON.parse(JSON.stringify(g.serialize()));
+  saved.current = 'gone';
+  saved.deck = ['gone', ...saved.deck];
+  saved.turnCards = [{id: 'gone', res: 'ok'}, {id: IDS[0], res: 'ok'}, {id: IDS[1], res: '??'}];
+  saved.turnTeam = 7;
+  saved.overlay = 'nonsense';
+  const g2 = make();
+  assert.ok(g2.restore(saved));
+  assert.ok(IDS.includes(g2.state.current), 'an unknown card is replaced');
+  assert.ok(g2.state.deck.every(id => IDS.includes(id)));
+  assert.deepEqual(g2.state.turnCards.map(c => c.id), [IDS[0]]);
+  assert.equal(g2.state.turnTeam, 0);
+  assert.equal(g2.state.overlay, 'pause');
+  assert.equal(make().restore({screen: 'turn', teams: 'x'}), false);
+  assert.equal(make().restore({screen: 'nowhere', teams: [{name: 'A'}]}), false);
+  assert.ok(make({played: ['gone', IDS[0]]}).played.size === 1, 'unknown played cards are forgotten');
+});
+
+test('a finished game is not restored', () => {
+  const g = make({params: {ROUNDS: 1}});
+  g.startGame(['Мы']); g.startTurn(); g.tick(PARAMS.COUNTDOWN_SECONDS * 1000);
+  g.tick(PARAMS.ROUND_SECONDS * 1000); g.flip(); g.answer('ok'); settle(g); g.nextTurn();
+  assert.equal(g.state.screen, 'final');
+  assert.equal(make().restore(JSON.parse(JSON.stringify(g.serialize()))), false);
+});
+
+test('pausing during the last answer does not leave the pause over the summary', () => {
+  const g = make();
+  playTurn(g);
+  g.tick(PARAMS.ROUND_SECONDS * 1000);
+  g.answer('ok');
+  assert.ok(g.pause());
+  settle(g);
+  assert.equal(g.state.screen, 'summary');
+  assert.equal(g.state.overlay, null);
+});
+
+test('a record that is not beaten is not flagged as new', () => {
+  const g = make({params: {ROUNDS: 1}, record: 5});
+  g.startGame(['Мы']); g.startTurn(); g.tick(PARAMS.COUNTDOWN_SECONDS * 1000);
+  g.tick(PARAMS.ROUND_SECONDS * 1000); g.flip(); g.answer('ok'); settle(g); g.nextTurn();
+  assert.equal(g.state.newRecord, false);
+  assert.equal(g.record, 5);
+});
+
+test('a new team gets a default name nobody uses yet', () => {
+  assert.equal(freeTeamName(['Хирурги']), 'Терапевты');
+  assert.equal(freeTeamName(['Терапевты', 'Хирурги']), 'Лоры');
+  assert.equal(freeTeamName(['Хирурги', 'Лоры', 'Мы']), 'Терапевты');
 });
 
 test('shuffle keeps every item', () => {

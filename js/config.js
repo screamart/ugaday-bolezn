@@ -26,6 +26,10 @@ export const TIMING = Object.freeze({
   CONFETTI_MS: 4500,
   MAX_FRAME_MS: 100,
   DRAG_TAP_PX: 8,
+  // A second tap this soon and this close to one that changed the screen is a double tap, not a choice.
+  SCREEN_GUARD_MS: 350,
+  TAP_SLOP_PX: 40,
+  THERMO_TICK_SECONDS: 10,
 });
 
 export const DEFAULT_TEAMS = 2;

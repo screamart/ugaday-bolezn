@@ -12,6 +12,8 @@ import {PARAMS, TEAM_NAMES, TEAM_COLORS, MAX_TEAMS} from './config.js';
 
 const PLAYING = ['turn', 'last'];
 const PAUSABLE = ['turn', 'last', 'countdown'];
+// A finished game is not brought back: the next launch starts from the home screen.
+const RESTORABLE = ['handoff', 'countdown', 'turn', 'last', 'summary'];
 
 export function freshState(){
   return {
@@ -32,11 +34,16 @@ export function shuffle(list, rng = Math.random){
   return a;
 }
 
+// The first default name nobody uses yet, so adding a team never repeats a name.
+export function freeTeamName(names){
+  return TEAM_NAMES.find(n => !names.includes(n)) || TEAM_NAMES[names.length % TEAM_NAMES.length];
+}
+
 export class Game {
   constructor({cardIds, params = {...PARAMS}, played = [], record = 0, rng = Math.random, emit = () => {}}){
     this.cardIds = cardIds;
     this.params = params;
-    this.played = new Set(played);
+    this.played = new Set(played.filter(id => cardIds.includes(id)));
     this.record = record;
     this.rng = rng;
     this.emit = emit;
@@ -173,7 +180,9 @@ export class Game {
   }
 
   endTurn(){
-    this.state.screen = 'summary';
+    const s = this.state;
+    s.screen = 'summary';
+    s.overlay = null; s.prevOverlay = null;
     this.emit('wake', false);
     this.changed();
   }
@@ -286,11 +295,23 @@ export class Game {
   }
 
   // A restored turn comes back paused; a countdown goes back to the hand-off screen.
+  // Saved data comes from an older release or a damaged store: anything that does not fit is dropped.
   restore(saved){
-    if (!saved || !saved.screen || ['home', 'rules', 'setup'].includes(saved.screen)) return false;
-    const s = this.state = Object.assign(freshState(), saved, {switching: 0, enter: false, rotated: false});
-    if (!s.teams.length){ this.state = freshState(); return false; }
+    if (!saved || !RESTORABLE.includes(saved.screen)) return false;
+    if (!Array.isArray(saved.teams) || !saved.teams.length || saved.teams.length > MAX_TEAMS) return false;
+    const known = id => this.cardIds.includes(id);
+    const s = this.state = Object.assign(freshState(), saved, {switching: 0, enter: false, rotated: false, prevOverlay: null});
+    s.teams = saved.teams.map((t, i) => ({
+      name: String(t && t.name || '').trim() || TEAM_NAMES[i], color: TEAM_COLORS[i], score: Number(t && t.score) || 0,
+    }));
+    s.turnTeam = Number.isInteger(s.turnTeam) && s.turnTeam >= 0 && s.turnTeam < s.teams.length ? s.turnTeam : 0;
+    s.round = Number.isInteger(s.round) && s.round >= 1 ? s.round : 1;
+    s.deck = Array.isArray(s.deck) ? s.deck.filter(known) : [];
+    s.turnCards = Array.isArray(s.turnCards) ? s.turnCards.filter(c => c && known(c.id) && ['ok', 'skip', 'miss'].includes(c.res)) : [];
+    if (!known(s.current)) s.current = null;
+    if (!['pause', 'confirm'].includes(s.overlay)) s.overlay = null;
     if (s.screen === 'countdown'){ s.screen = 'handoff'; s.overlay = null; }
+    if (s.screen === 'summary') s.overlay = null;
     if (this.playing){
       if (s.screen === 'turn' && !s.current) s.current = this.draw();
       if (s.screen === 'last' && !s.current) s.screen = 'summary';

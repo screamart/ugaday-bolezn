@@ -6,7 +6,8 @@ let ctx = null;
 export function unlock(){
   try {
     if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
-    if (ctx.state === 'suspended') ctx.resume();
+    // 'suspended' before the first gesture, 'interrupted' after a call or a trip to the home screen
+    if (ctx.state !== 'running') ctx.resume().catch(() => {});
   } catch {
     ctx = null;
   }

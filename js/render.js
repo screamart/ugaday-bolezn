@@ -1,5 +1,5 @@
 // Screen templates and in-place DOM updates. Templates read the game and the ui settings; they never change state.
-import {SYSTEMS, LIMITS, TEAM_COLORS, MAX_TEAMS, TEAM_NAME_MAX} from './config.js';
+import {SYSTEMS, LIMITS, TIMING, TEAM_COLORS, MAX_TEAMS, TEAM_NAME_MAX} from './config.js';
 import {CARD} from './cards.js';
 import {artSVG} from './art.js';
 import {ICON} from './icons.js';
@@ -134,7 +134,7 @@ function scrTurn(g){
   const skipLabel = last || g.solo ? 'Не угадали' : 'Пропуск';
   return `<div class="scr turn ${g.warning ? 'warn' : ''} ${last ? 'last' : ''} ${g.held ? 'held' : ''}">
     <div class="topbar"><div class="teamtag"><span class="dot" style="background:${t.color}"></span><span class="nm">${esc(t.name)}</span><span class="runsum">${sign(g.points())}</span></div><button class="iconbtn" data-a="pause" aria-label="Пауза">${ICON.pause}</button></div>
-    <div class="thermo" style="--seg:${Math.max(1, Math.round(s.turnTotal / 10000))}" role="timer" aria-label="Осталось секунд"><div class="bulb"><span class="tsec">${g.secondsLeft}</span></div><div class="tube"><div class="merc" style="width:${pct.toFixed(2)}%"></div><div class="ticks"></div><span class="hold">${ICON.pauseSm}пауза</span></div></div>
+    <div class="thermo" style="--seg:${Math.max(1, Math.round(s.turnTotal / 1000 / TIMING.THERMO_TICK_SECONDS))}" role="timer" aria-label="Осталось секунд"><div class="bulb"><span class="tsec">${g.secondsLeft}</span></div><div class="tube"><div class="merc" style="width:${pct.toFixed(2)}%"></div><div class="ticks"></div><span class="hold">${ICON.pauseSm}пауза</span></div></div>
     <div class="cardwrap">${card}${last ? '<div class="lastbanner">Последнее слово!</div>' : ''}</div>
     <p class="hint">${turnHint(g)}</p>
     <div class="answers">
@@ -160,7 +160,7 @@ function scrSummary(g){
       `<span class="sname">${k.name}${c.last ? '<small>последнее слово</small>' : ''}</span>${resChip(c, g.params.SKIP_PENALTY)}</button></li>`;
   }).join('');
   return `<div class="scr summary">
-    <p class="g-eyebrow">Итоги хода · ${esc(g.team.name)}</p>
+    ${topbar(`<button class="iconbtn" data-a="askExit" aria-label="Закончить игру">${ICON.x}</button>`, `Итоги хода · ${esc(g.team.name)}`)}
     <div class="sumhead"><span class="big">${sign(pts)}</span><span class="sumsub">${ok} ${plural(ok, ['угадана', 'угаданы', 'угадано'])}, ${miss} мимо</span></div>
     <ul class="slist">${rows}</ul>
     <p class="hint">Ошиблись с ответом? Нажмите на строку, чтобы исправить</p>

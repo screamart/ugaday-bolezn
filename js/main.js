@@ -2,7 +2,7 @@
 import {PARAMS, LIMITS, TIMING, DEFAULT_TEAMS, MAX_TEAMS, TEAM_NAMES, TEAM_NAME_MAX} from './config.js';
 import {CARDS} from './cards.js';
 import {INK} from './art.js';
-import {Game} from './game.js';
+import {Game, freeTeamName} from './game.js';
 import * as storage from './storage.js';
 import * as sound from './sound.js';
 import {renderScreen, updateTimer, turnHint, confetti, sign} from './render.js';
@@ -83,18 +83,23 @@ function showAnswer(){
 }
 
 // Keeps the screen on during a turn where Safari allows it; a refusal is fine.
+// wanted tracks the latest request, so a release that comes while a request is still pending wins.
 const wake = {
-  lock: null,
+  lock: null, wanted: false,
   async hold(){
+    this.wanted = true;
+    if (!('wakeLock' in navigator) || this.lock) return;
     try {
-      if (!('wakeLock' in navigator) || this.lock) return;
-      this.lock = await navigator.wakeLock.request('screen');
-      this.lock.addEventListener('release', () => { this.lock = null; });
+      const lock = await navigator.wakeLock.request('screen');
+      if (!this.wanted){ lock.release(); return; }
+      this.lock = lock;
+      lock.addEventListener('release', () => { if (this.lock === lock) this.lock = null; });
     } catch {
       this.lock = null;
     }
   },
   release(){
+    this.wanted = false;
     try { if (this.lock) this.lock.release(); } catch { /* already released */ }
     this.lock = null;
   },
@@ -129,7 +134,7 @@ const ACTIONS = {
   },
   addTeam(){
     if (ui.setupTeams.length >= MAX_TEAMS) return;
-    ui.setupTeams.push(TEAM_NAMES[ui.setupTeams.length]);
+    ui.setupTeams.push(freeTeamName(ui.setupTeams));
     render(); persist();
   },
   rmTeam(d){
@@ -169,16 +174,22 @@ css.setProperty('--pop-ms', TIMING.POP_MS + 'ms');
 css.setProperty('--stamp-ms', TIMING.STAMP_MS + 'ms');
 css.setProperty('--toast-ms', TIMING.TOAST_MS + 'ms');
 
-document.addEventListener('pointerdown', sound.unlock, true);
-document.addEventListener('keydown', sound.unlock, true);
+// iOS unlocks audio only inside a gesture that ends a touch (touchend, click), not on pointerdown.
+for (const type of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) document.addEventListener(type, sound.unlock, true);
 attachInput({
   root, game,
   act: (name, data) => { const fn = ACTIONS[name]; if (fn) fn(data || {}); },
   onTeamName: (i, value) => { ui.setupTeams[i] = value.slice(0, TEAM_NAME_MAX); persist(); },
 });
 
-render();
-if (restored) toast('Партия восстановлена');
+try {
+  render();
+  if (restored) toast('Партия восстановлена');
+} catch {
+  game.home();
+}
+// Ask Safari not to clear the record and played cards after a week without visits.
+if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 
 // Offline play and "Add to Home Screen". Registration failing (private mode, file://) only loses offline mode.
 if ('serviceWorker' in navigator && location.protocol !== 'file:'){
@@ -187,7 +198,9 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:'){
 
 let lastFrame = performance.now();
 requestAnimationFrame(function frame(now){
-  game.tick(Math.min(TIMING.MAX_FRAME_MS, now - lastFrame));
-  lastFrame = now;
+  // Schedule first: an error in one frame must not stop the timer for good.
   requestAnimationFrame(frame);
+  const dt = Math.min(TIMING.MAX_FRAME_MS, now - lastFrame);
+  lastFrame = now;
+  game.tick(dt);
 });

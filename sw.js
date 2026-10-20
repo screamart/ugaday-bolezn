@@ -2,7 +2,9 @@
 // Stale-while-revalidate: answers from the cache at once and refreshes it in the background,
 // so a new release reaches players on their next launch.
 // Bump VERSION with every release; tests/sw.test.js checks that SHELL lists every file the game needs.
-const VERSION = 1;
+// Both the install and the refresh bypass the HTTP cache (GitHub Pages sends max-age=600),
+// otherwise a new release could be cached from stale or mixed files.
+const VERSION = 2;
 const CACHE = `ugaday-v${VERSION}`;
 const SHELL = [
   './',
@@ -34,7 +36,9 @@ const SHELL = [
 ];
 
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
+  event.waitUntil(caches.open(CACHE)
+    .then(cache => cache.addAll(SHELL.map(url => new Request(url, {cache: 'reload'}))))
+    .then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', event => {
@@ -48,7 +52,8 @@ self.addEventListener('fetch', event => {
   if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
   event.respondWith(caches.open(CACHE).then(async cache => {
     const cached = await cache.match(req, {ignoreSearch: true});
-    const fresh = fetch(req).then(res => {
+    // a navigation request cannot be copied with options, so it is rebuilt from its URL
+    const fresh = fetch(req.mode === 'navigate' ? new Request(req.url, {cache: 'no-cache'}) : new Request(req, {cache: 'no-cache'})).then(res => {
       if (res.ok) cache.put(req, res.clone());
       return res;
     });

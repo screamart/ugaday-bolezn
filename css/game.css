@@ -4,6 +4,7 @@
   --g-ok:#12864D; --g-ok-deep:#0A4E2D; --g-skip:#D2373C; --g-skip-deep:#7E1A1E;
   --g-mercury:#E5372F; --g-mercury-hot:#FF2A1F; --g-glass:#FFFFFF;
   --g-shadow:rgba(36,25,59,.25); --g-veil:rgba(36,25,59,.6);
+  --g-pop-ok:#3BE08A; --g-pop-skip:#FF7A7D; --g-tint-ok:rgba(18,134,77,.88); --g-tint-skip:rgba(210,55,60,.88);
   --sys-gut:#FF6B57;
   --f-display:'Unbounded','Arial Black',system-ui,sans-serif;
   --f-body:'Nunito','Segoe UI',system-ui,-apple-system,sans-serif;
@@ -99,7 +100,7 @@ button:focus-visible, input:focus-visible, [role="button"]:focus-visible{outline
 .tk-l{font:700 30px/1 var(--f-hand)}
 .tk-n{font:900 36px/1.05 var(--f-display); text-wrap:balance; overflow-wrap:anywhere}
 .say{font:700 19px/1.35 var(--f-body); text-align:center; margin:4px 8px 0; text-wrap:balance}
-.board{list-style:none; margin:4px 0 0; padding:0; display:grid; gap:8px; overflow:auto; min-height:0}
+.board{list-style:none; margin:4px 0 0; padding:0; display:grid; grid-template-columns:minmax(0,1fr); gap:8px; overflow:auto; min-height:0}
 .board li{display:flex; align-items:center; gap:12px; background:rgba(255,255,255,.7); border:2.5px solid var(--g-ink); border-radius:14px; padding:10px 14px; font:800 18px var(--f-body)}
 .board li.cur{background:var(--g-paper); box-shadow:0 0 0 3px var(--g-gold)}
 .tn{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
@@ -146,7 +147,7 @@ button:focus-visible, input:focus-visible, [role="button"]:focus-visible{outline
 .info li{font:700 18px/1.3 var(--f-body); padding-left:22px; position:relative}
 .info li::before{content:""; position:absolute; left:3px; top:.42em; width:10px; height:10px; border-radius:50%; background:var(--sys); border:2.5px solid var(--g-ink)}
 .tint{position:absolute; inset:0; opacity:0; display:grid; place-items:center; color:var(--g-paper); font:900 32px var(--f-display); pointer-events:none}
-.tint.up{background:rgba(18,134,77,.88)} .tint.down{background:rgba(210,55,60,.88)}
+.tint.up{background:var(--g-tint-ok)} .tint.down{background:var(--g-tint-skip)}
 
 /* solo card: complaints on the front, the answer on the back */
 .card.flip{border:0; background:none; box-shadow:none; overflow:visible; perspective:1400px; border-radius:30px}
@@ -180,7 +181,7 @@ button:focus-visible, input:focus-visible, [role="button"]:focus-visible{outline
 
 .pops{position:absolute; inset:0; pointer-events:none; z-index:20; display:grid; place-items:center}
 .pop{grid-area:1/1; font:900 88px/1 var(--f-display); text-shadow:-4px -4px 0 var(--g-ink), 4px -4px 0 var(--g-ink), -4px 4px 0 var(--g-ink), 4px 4px 0 var(--g-ink), 0 -4px 0 var(--g-ink), 0 4px 0 var(--g-ink), -4px 0 0 var(--g-ink), 4px 0 0 var(--g-ink); animation:pop var(--pop-ms) ease-out forwards}
-.pop.ok{color:#3BE08A} .pop.skip{color:#FF7A7D} .pop.miss{color:var(--g-paper)}
+.pop.ok{color:var(--g-pop-ok)} .pop.skip{color:var(--g-pop-skip)} .pop.miss{color:var(--g-paper)}
 @keyframes pop{0%{transform:scale(.5) translateY(20px); opacity:0} 20%{transform:scale(1.1); opacity:1} 100%{transform:translateY(-130px) scale(1); opacity:0}}
 
 /* summary */
@@ -201,7 +202,7 @@ button:focus-visible, input:focus-visible, [role="button"]:focus-visible{outline
 .hand{font:700 36px/1 var(--f-hand); margin:10px 0 0; color:var(--g-muted)}
 .final h2{font:900 34px/1.1 var(--f-display); margin:0; text-wrap:balance; overflow-wrap:anywhere}
 .final .sub{font:700 17px var(--f-body); margin:0; color:var(--g-muted)}
-.rank{list-style:none; margin:8px 0 0; padding:0; display:grid; gap:10px; text-align:left; overflow:auto; min-height:0}
+.rank{list-style:none; margin:8px 0 0; padding:0; display:grid; grid-template-columns:minmax(0,1fr); gap:10px; text-align:left; overflow:auto; min-height:0}
 .rank li{display:flex; align-items:center; gap:12px; background:var(--g-paper); border:3px solid var(--g-ink); border-radius:18px; padding:12px 16px; font:800 19px var(--f-body)}
 .rank li.win{background:var(--g-gold)}
 .place{font:900 20px var(--f-display); width:26px; flex:none}
@@ -247,9 +248,12 @@ button:focus-visible, input:focus-visible, [role="button"]:focus-visible{outline
 @media (max-height:620px){
   :root{--gap:8px}
   .turn .hint{display:none}
+  .front{gap:4px; padding:12px 14px} .front .lbl{font-size:22px} .front li{font-size:18px} .front ul{gap:4px}
+  .qmark{width:38px; height:38px; font-size:20px} .fq{font-size:17px} .taphint{padding:8px 14px; font-size:15px}
   .fan{transform:scale(.6); margin-bottom:-98px}
   .hand{font-size:30px; margin-top:0}
 }
 @media (prefers-reduced-motion:reduce){
   *, *::before, *::after{animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important}
+  .warn .bulb{box-shadow:0 0 0 5px var(--g-gold)}
 }
