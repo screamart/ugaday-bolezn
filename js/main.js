@@ -180,6 +180,11 @@ attachInput({
 render();
 if (restored) toast('Партия восстановлена');
 
+// Offline play and "Add to Home Screen". Registration failing (private mode, file://) only loses offline mode.
+if ('serviceWorker' in navigator && location.protocol !== 'file:'){
+  navigator.serviceWorker.register('./sw.js').catch(() => {});
+}
+
 let lastFrame = performance.now();
 requestAnimationFrame(function frame(now){
   game.tick(Math.min(TIMING.MAX_FRAME_MS, now - lastFrame));

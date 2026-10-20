@@ -42,6 +42,7 @@ async function open(browser, vp, {mobile = true} = {}){
   const page = await ctx.newPage();
   page.errors = [];
   page.on('pageerror', e => page.errors.push(e.message));
+  page.on('request', r => { if (!r.url().startsWith(BASE)) page.errors.push('external request: ' + r.url()); });
   page.on('console', m => { if (m.type() === 'error') page.errors.push(m.text()); });
   await page.clock.install();
   await page.goto(BASE);
@@ -216,6 +217,30 @@ async function pauseAndRestore(browser){
   await ctx.close();
 }
 
+// Second visit without network: the service worker serves the whole game, fonts included.
+async function offline(browser){
+  const ctx = await browser.newContext({viewport: {width: 402, height: 750}, isMobile: true, hasTouch: true});
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto(BASE);
+  await page.waitForSelector('.scr.home');
+  await page.waitForFunction(() => navigator.serviceWorker && navigator.serviceWorker.controller, null, {timeout: 10_000});
+  await ctx.setOffline(true);
+  await page.reload();
+  await page.waitForSelector('.scr.home');
+  await page.evaluate(() => document.fonts.ready);
+  check(await page.evaluate(() => document.fonts.check('800 32px Unbounded', 'Угадай') && document.fonts.check('700 18px Nunito', 'Объясняй')), 'offline: fonts load from the cache');
+  await page.click('[data-a="toSetup"]');
+  await page.click('[data-a="start"]');
+  await page.click('[data-a="startTurn"]');
+  await page.waitForSelector('.scr.turn', {timeout: 6000});
+  check(await page.locator('.card .art svg').count() === 1, 'offline: a card is drawn');
+  check(!errors.length, `offline: console errors: ${errors.join(' | ')}`);
+  await page.screenshot({path: join(OUT, 'offline-turn.png')});
+  await ctx.close();
+}
+
 async function deckPage(browser){
   const ctx = await browser.newContext({viewport: {width: 1280, height: 900}});
   const page = await ctx.newPage();
@@ -246,6 +271,7 @@ try {
   await teamsGame(browser, DESKTOP, false);
   await pauseAndRestore(browser);
   await rotation(browser);
+  await offline(browser);
   await deckPage(browser);
 } catch (e) {
   failures.push('crashed: ' + (e.stack || e.message));
@@ -257,4 +283,4 @@ if (failures.length){
   console.error('E2E FAILED\n- ' + failures.join('\n- '));
   process.exit(1);
 }
-console.log(`E2E passed: ${PHONES.length} phone sizes + desktop, all card names fit, solo, pause/restore, rotation, deck page. Screenshots: tests/e2e/out/`);
+console.log(`E2E passed: ${PHONES.length} phone sizes + desktop, all card names fit, solo, pause/restore, rotation, offline, deck page. Screenshots: tests/e2e/out/`);
