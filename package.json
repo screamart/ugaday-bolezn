@@ -1,0 +1,12 @@
+{
+  "name": "ugaday-bolezn",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Угадай болезнь — шуточная объяснялка для компании на одном iPhone. Играется в Safari, без установки.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"tests/*.test.js\"",
+    "serve": "python3 -m http.server 8080",
+    "e2e": "node tests/e2e/smoke.mjs"
+  }
+}
