@@ -64,6 +64,32 @@ async function fits(page, label){
   check(!r.overflowX, `${label}: horizontal scroll`);
   check(!r.below.length, `${label}: below the screen: ${r.below.join(', ')}`);
 }
+// Every card name fits the real card on this screen: no word is cut in the middle (soft hyphens are fine).
+async function namesFit(page, label){
+  const bad = await page.evaluate(async () => {
+    const {CARDS} = await import('./js/cards.js');
+    const {cardHTML} = await import('./js/render.js');
+    await document.fonts.ready;
+    const wrap = document.querySelector('.cardwrap');
+    const keep = wrap.innerHTML, out = [];
+    for (const c of CARDS){
+      wrap.innerHTML = cardHTML(c.id);
+      const name = wrap.querySelector('.name'), width = name.clientWidth;
+      const probe = document.createElement('span');
+      probe.style.cssText = `font:${getComputedStyle(name).font}; white-space:nowrap; position:absolute; visibility:hidden`;
+      document.body.append(probe);
+      for (const part of c.name.split(/[\s­]+/)){
+        probe.textContent = part + '-';
+        if (probe.getBoundingClientRect().width > width + 1) out.push(`${part} (${Math.round(probe.getBoundingClientRect().width)} > ${width})`);
+      }
+      probe.remove();
+      if (parseFloat(getComputedStyle(name).fontSize) < 28) out.push(`${c.name}: font ${getComputedStyle(name).fontSize}`);
+    }
+    wrap.innerHTML = keep;
+    return out;
+  });
+  check(!bad.length, `${label}: names do not fit: ${bad.join(', ')}`);
+}
 const shot = (page, name) => page.screenshot({path: join(OUT, name + '.png')});
 const text = (page, sel) => page.locator(sel).first().innerText();
 async function countdown(page){ await page.clock.runFor(3200); await page.waitForSelector('.scr.turn'); }
@@ -85,6 +111,7 @@ async function teamsGame(browser, vp, mobile){
   await page.click('[data-a="startTurn"]');
   await countdown(page);
   await fits(page, `${L} turn`); await shot(page, `${L}-4-turn`);
+  await namesFit(page, L);
   await page.click('[data-a="ok"]'); await page.clock.runFor(300);
   await page.click('[data-a="skip"]'); await page.clock.runFor(300);
   // swipe up
@@ -189,6 +216,19 @@ async function pauseAndRestore(browser){
   await ctx.close();
 }
 
+async function deckPage(browser){
+  const ctx = await browser.newContext({viewport: {width: 1280, height: 900}});
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto(BASE + 'deck.html');
+  await page.waitForSelector('.dcard');
+  check(await page.locator('.dcard').count() === 60, 'deck page shows 60 cards');
+  check(!errors.length, `deck page errors: ${errors.join(' | ')}`);
+  await page.screenshot({path: join(OUT, 'deck.png'), fullPage: true});
+  await ctx.close();
+}
+
 async function rotation(browser){
   const {ctx, page} = await open(browser, {width: 750, height: 402});
   check(await page.locator('.ov.rot').count() === 1, 'landscape phone shows the rotate hint');
@@ -206,6 +246,7 @@ try {
   await teamsGame(browser, DESKTOP, false);
   await pauseAndRestore(browser);
   await rotation(browser);
+  await deckPage(browser);
 } catch (e) {
   failures.push('crashed: ' + (e.stack || e.message));
 } finally {
@@ -216,4 +257,4 @@ if (failures.length){
   console.error('E2E FAILED\n- ' + failures.join('\n- '));
   process.exit(1);
 }
-console.log(`E2E passed: ${PHONES.length} phone sizes + desktop, solo, pause/restore, rotation. Screenshots: tests/e2e/out/`);
+console.log(`E2E passed: ${PHONES.length} phone sizes + desktop, all card names fit, solo, pause/restore, rotation, deck page. Screenshots: tests/e2e/out/`);

@@ -18,10 +18,14 @@ export function plural(n, forms){
 const rounds = n => `${n} ${plural(n, ['круг', 'круга', 'кругов'])}`;
 const diagnoses = n => plural(n, ['диагноз', 'диагноза', 'диагнозов']);
 
+// Longest part of the name that cannot break; .name in game.css shrinks the font only if it does not fit.
+const nameLen = name => Math.max(...name.split(/[\s\u00AD]+/).map(w => w.length));
+const nameHTML = name => `<p class="name" style="--len:${nameLen(name)}">${name}</p>`;
+
 export function cardHTML(id, cls = ''){
   const c = CARD[id], sys = SYSTEMS[c.sys];
   return `<div class="card ${cls}" style="--sys:${sys.color}"><div class="art">${artSVG(c)}<span class="chip">${sys.name}</span></div>` +
-    `<div class="info"><p class="name">${c.name}</p><div class="lbl">Жалобы:</div><ul>${c.hints.map(h => `<li>${h}</li>`).join('')}</ul></div><div class="tint"></div></div>`;
+    `<div class="info">${nameHTML(c.name)}<div class="lbl">Жалобы:</div><ul>${c.hints.map(h => `<li>${h}</li>`).join('')}</ul></div><div class="tint"></div></div>`;
 }
 
 // Solo mode: complaints on the front, picture and name on the back.
@@ -29,7 +33,7 @@ export function soloCardHTML(id, cls = '', flipped = false){
   const c = CARD[id], sys = SYSTEMS[c.sys];
   return `<div class="card flip ${flipped ? 'is-flipped' : ''} ${cls}" style="--sys:${sys.color}"${flipped ? '' : ' data-a="flip" role="button" aria-label="Перевернуть карточку"'}><div class="flipper">` +
     `<div class="face front"><div class="fq"><span class="qmark">?</span>Что за болезнь?</div><div class="lbl">Жалобы:</div><ul>${c.hints.map(h => `<li>${h}</li>`).join('')}</ul><span class="taphint">${ICON.flip}Нажмите, чтобы проверить</span></div>` +
-    `<div class="face back"><div class="art">${artSVG(c)}<span class="chip">${sys.name}</span></div><div class="info"><p class="name">${c.name}</p></div></div>` +
+    `<div class="face back"><div class="art">${artSVG(c)}<span class="chip">${sys.name}</span></div><div class="info">${nameHTML(c.name)}</div></div>` +
     `</div><div class="tint"></div></div>`;
 }
 
