@@ -83,12 +83,14 @@ function showAnswer(){
 }
 
 // Keeps the screen on during a turn where Safari allows it; a refusal is fine.
-// wanted tracks the latest request, so a release that comes while a request is still pending wins.
+// wanted tracks the latest call, so a release that comes while a request is pending wins;
+// pending keeps hold → release → hold from asking twice and leaking the first lock.
 const wake = {
-  lock: null, wanted: false,
+  lock: null, wanted: false, pending: false,
   async hold(){
     this.wanted = true;
-    if (!('wakeLock' in navigator) || this.lock) return;
+    if (!('wakeLock' in navigator) || this.lock || this.pending) return;
+    this.pending = true;
     try {
       const lock = await navigator.wakeLock.request('screen');
       if (!this.wanted){ lock.release(); return; }
@@ -96,6 +98,8 @@ const wake = {
       lock.addEventListener('release', () => { if (this.lock === lock) this.lock = null; });
     } catch {
       this.lock = null;
+    } finally {
+      this.pending = false;
     }
   },
   release(){
@@ -188,8 +192,9 @@ try {
 } catch {
   game.home();
 }
-// Ask Safari not to clear the record and played cards after a week without visits.
-if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+// Ask iOS Safari not to clear the record and played cards after a week without visits.
+// navigator.standalone exists only there; elsewhere (Firefox) persist() would show a permission prompt.
+if ('standalone' in navigator && navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 
 // Offline play and "Add to Home Screen". Registration failing (private mode, file://) only loses offline mode.
 if ('serviceWorker' in navigator && location.protocol !== 'file:'){

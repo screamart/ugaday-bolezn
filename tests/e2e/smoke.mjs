@@ -137,7 +137,10 @@ async function teamsGame(browser, vp, mobile){
   await fits(page, `${L} setup 4 teams`); await shot(page, `${L}-2-setup`);
   await tap(page, '[data-a="rmTeam"][data-i="3"]');
   await tap(page, '[data-a="rmTeam"][data-i="2"]');
-  for (let i = 0; i < 2; i++) await tap(page, '[data-a="step"][data-k="ROUNDS"][data-d="-1"]');
+  // two quick taps on the same screen both count: the double-tap guard only acts across screens
+  const fewer = page.locator('[data-a="step"][data-k="ROUNDS"][data-d="-1"]');
+  await fewer.click(); await fewer.click();
+  check(await page.locator('.opt .stepper output').nth(1).innerText() === '1', `${L}: two quick taps on «−» both count`);
   await tap(page, '[data-a="start"]');
   await fits(page, `${L} handoff`); await shot(page, `${L}-3-handoff`);
 

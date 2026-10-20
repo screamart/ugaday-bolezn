@@ -281,17 +281,41 @@ test('restore drops what an older release or a damaged store left behind', () =>
   saved.deck = ['gone', ...saved.deck];
   saved.turnCards = [{id: 'gone', res: 'ok'}, {id: IDS[0], res: 'ok'}, {id: IDS[1], res: '??'}];
   saved.turnTeam = 7;
-  saved.overlay = 'nonsense';
   const g2 = make();
   assert.ok(g2.restore(saved));
   assert.ok(IDS.includes(g2.state.current), 'an unknown card is replaced');
   assert.ok(g2.state.deck.every(id => IDS.includes(id)));
   assert.deepEqual(g2.state.turnCards.map(c => c.id), [IDS[0]]);
   assert.equal(g2.state.turnTeam, 0);
-  assert.equal(g2.state.overlay, 'pause');
+  const g3 = make();
+  assert.ok(g3.restore({...saved, screen: 'handoff', overlay: 'nonsense'}));
+  assert.equal(g3.state.overlay, null, 'an unknown overlay is dropped');
   assert.equal(make().restore({screen: 'turn', teams: 'x'}), false);
   assert.equal(make().restore({screen: 'nowhere', teams: [{name: 'A'}]}), false);
   assert.ok(make({played: ['gone', IDS[0]]}).played.size === 1, 'unknown played cards are forgotten');
+});
+
+test('solo: a face-up card that left the deck comes back as a new face-down card', () => {
+  const g = make();
+  playTurn(g, ['Мы']);
+  g.flip();
+  const saved = {...JSON.parse(JSON.stringify(g.serialize())), current: 'gone'};
+  const g2 = make();
+  g2.restore(saved);
+  assert.equal(g2.state.flipped, false);
+  assert.equal(g2.held, false);
+});
+
+test('a last word answered just before the app was closed restores to a clean summary', () => {
+  const g = make();
+  playTurn(g);
+  g.tick(PARAMS.ROUND_SECONDS * 1000);
+  g.answer('ok');
+  g.pause();
+  const g2 = make();
+  g2.restore(JSON.parse(JSON.stringify(g.serialize())));
+  assert.equal(g2.state.screen, 'summary');
+  assert.equal(g2.state.overlay, null);
 });
 
 test('a finished game is not restored', () => {

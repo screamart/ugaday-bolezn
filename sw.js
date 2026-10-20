@@ -4,7 +4,7 @@
 // Bump VERSION with every release; tests/sw.test.js checks that SHELL lists every file the game needs.
 // Both the install and the refresh bypass the HTTP cache (GitHub Pages sends max-age=600),
 // otherwise a new release could be cached from stale or mixed files.
-const VERSION = 2;
+const VERSION = 3;
 const CACHE = `ugaday-v${VERSION}`;
 const SHELL = [
   './',

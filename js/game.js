@@ -308,13 +308,13 @@ export class Game {
     s.round = Number.isInteger(s.round) && s.round >= 1 ? s.round : 1;
     s.deck = Array.isArray(s.deck) ? s.deck.filter(known) : [];
     s.turnCards = Array.isArray(s.turnCards) ? s.turnCards.filter(c => c && known(c.id) && ['ok', 'skip', 'miss'].includes(c.res)) : [];
-    if (!known(s.current)) s.current = null;
+    if (!known(s.current)){ s.current = null; s.flipped = false; }
     if (!['pause', 'confirm'].includes(s.overlay)) s.overlay = null;
     if (s.screen === 'countdown'){ s.screen = 'handoff'; s.overlay = null; }
     if (s.screen === 'summary') s.overlay = null;
     if (this.playing){
       if (s.screen === 'turn' && !s.current) s.current = this.draw();
-      if (s.screen === 'last' && !s.current) s.screen = 'summary';
+      if (s.screen === 'last' && !s.current){ s.screen = 'summary'; s.overlay = null; }
       else s.overlay = 'pause';
     }
     return true;
